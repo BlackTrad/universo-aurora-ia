@@ -1,7 +1,8 @@
 import {useEffect,useState} from 'react';
-import {api} from '@/lib/api';
+import {api,useData} from '@/lib/api';
 import {fmtPrice,fmtHMS} from '@/lib/apex';
 export function AssetCatalogue({onSelect,selected,now,revision}:{onSelect:(source:string,asset:string,tf?:string)=>void;selected:string;now:number;revision:string}){
+ const {isAdmin}=useData();
  const [market,setMarket]=useState(''),[search,setSearch]=useState(''),[query,setQuery]=useState(''),[page,setPage]=useState(1),[catalogue,setCatalogue]=useState<any>(null),[quotes,setQuotes]=useState<Record<string,any>>({}),[error,setError]=useState(''),[retry,setRetry]=useState(0);
  useEffect(()=>{const timer=setTimeout(()=>{setQuery(search);setPage(1)},250);return()=>clearTimeout(timer)},[search]);
  useEffect(()=>{const controller=new AbortController();setCatalogue(null);setError('');api('/instruments?page='+page+'&page_size=6'+(market?'&market='+market:'')+'&q='+encodeURIComponent(query),undefined,undefined,controller.signal).then(d=>{if(!controller.signal.aborted)setCatalogue(d)}).catch(e=>{if(!controller.signal.aborted)setError(e.message)});return()=>controller.abort()},[market,query,page,revision,retry]);
@@ -31,6 +32,6 @@ export function AssetCatalogue({onSelect,selected,now,revision}:{onSelect:(sourc
    {catalogue.items.length===0&&<p className="text-xs">Nenhum instrumento encontrado.</p>}
    <div className="mt-2 flex items-center justify-between gap-1 text-[11px]"><button disabled={page<=1} onClick={()=>setPage(p=>p-1)} className="rounded border border-border p-2 disabled:opacity-50">Anterior</button><span>{catalogue.total} instrumentos · Página {page}/{Math.max(1,Math.ceil(catalogue.total/6))}</span><button disabled={page*6>=catalogue.total} onClick={()=>setPage(p=>p+1)} className="rounded border border-border p-2 disabled:opacity-50">Próxima</button></div>
   </>}
-  <p className="mt-2 text-[11px] text-muted-foreground">Clique para ver no gráfico. ✓ Monitorado. <a href="/configuracoes" className="text-primary">Definir monitorados</a></p>
+  <p className="mt-2 text-[11px] text-muted-foreground">Clique para ver no gráfico. ✓ Monitorado. {isAdmin&&<a href="/configuracoes" className="text-primary">Definir monitorados</a>}</p>
  </section>;
 }

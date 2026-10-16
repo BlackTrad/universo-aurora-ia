@@ -5,7 +5,7 @@ import math
 SCHEMA_VERSION = '1.26.6-1'
 # Audited releases share the original-source closed-M1 outcome contract.
 # Recovery compatibility never merges strategy/pipeline learning contexts.
-COMPATIBLE_RELEASES = ('3.6.0','3.7.0','3.8.0','3.8.1','3.8.2')
+COMPATIBLE_RELEASES = ('3.6.0','3.7.0','3.8.0','3.8.1','3.8.2','3.9.0')
 
 
 def compatible_versions(current):

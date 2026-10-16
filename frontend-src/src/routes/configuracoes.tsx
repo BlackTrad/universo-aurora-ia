@@ -17,7 +17,7 @@ export default function Settings(){
   try{await api('/settings',{...snapshot.settings,...patch},'PUT');await refresh();setNotice('Configurações salvas.')}catch(e:any){setError(e.message)}finally{pending.current=false;setBusy(false)};
  };
  return <AppShell><div className="space-y-3">
-  <div className="flex flex-wrap items-center justify-between gap-2"><h1 className="text-xl font-semibold">Configurações de análise</h1><a href="/" className="text-sm text-primary">Voltar ao painel</a></div>
+  <div className="flex flex-wrap items-center justify-between gap-2"><h1 className="text-xl font-semibold">Configurações de análise</h1><a href="/bot" className="text-sm text-primary">Voltar ao painel</a></div>
   {error&&<p role="alert" className="rounded border border-bear p-3 text-sm text-bear">{error}</p>}
   {!snapshot?<p>Carregando configurações…</p>:<>
    <div className="flex flex-wrap items-center gap-2 text-sm"><span className="source-badge">Fontes automáticas</span><a href="/conexoes" className="text-muted-foreground underline underline-offset-4">Ver conexões</a></div>

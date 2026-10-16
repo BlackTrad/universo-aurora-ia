@@ -9,6 +9,7 @@ export async function api(path:string,body?:unknown,method?:string,signal?:Abort
  const timer=setTimeout(()=>controller.abort(),timeout);
  try{
   const response=await fetch('/api'+path,{method:method||(hasBody?'POST':'GET'),headers:hasBody?{'Content-Type':'application/json'}:undefined,body:hasBody?JSON.stringify(body):undefined,signal:controller.signal});
+  if(response.status===401){location.assign('/login');throw Error('Sua sessão expirou. Entre novamente.');}
   if(!response.ok){let message='Falha na consulta ('+response.status+')';try{const d=await response.json();message=typeof d.detail==='string'?d.detail:message;}catch{}throw Error(message);}return await response.json();
  }finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}
 }
@@ -22,7 +23,7 @@ export function DataProvider({children}:any){const [snapshot,setSnapshot]=useSta
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[]);
  useEffect(()=>{let stop=false;let timer:any;async function loop(){await refresh();if(!stop)timer=setTimeout(loop,3000);}loop();return()=>{stop=true;clearTimeout(timer)}},[refresh]);
  useEffect(()=>{const timer=setInterval(()=>setNow(snapshot?snapshot.server_time*1000+(Date.now()-snapshot.received):Date.now()),1000);return()=>clearInterval(timer)},[snapshot]);
- return <Context.Provider value={{snapshot,error:connectionError||error,setError,connected,now,refresh,chartStatus,reportChartStatus}}>{children}</Context.Provider>;
+ return <Context.Provider value={{snapshot,isAdmin:snapshot?.access?.user?.role==='admin',user:snapshot?.access?.user,error:connectionError||error,setError,connected,now,refresh,chartStatus,reportChartStatus}}>{children}</Context.Provider>;
 }
 export const useData=()=>useContext(Context);
 export const mapSignal=(s:any)=>({...s,entry_time:new Date(s.entry_at*1000).toISOString(),expiry_time:new Date(s.expiry_at*1000).toISOString(),timeframe:s.timeframe,expiration_minutes:s.duration_seconds/60,strategy:s.strategy_resolved||s.strategy,entry_price:s.entry_price??null,exit_price:s.expiry_price??null,result:s.state==='cancelado'?'CANCELADO':s.state==='encerrado'?(s.settlement_pending?'APURANDO':(s.result||'INDISPONÍVEL')):'PENDING'});

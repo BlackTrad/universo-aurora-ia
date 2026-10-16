@@ -1,21 +1,20 @@
-import {useEffect,useRef,useState,type ReactNode} from 'react';
-import {api,useData} from '@/lib/api';
+import {useEffect,useRef,type ReactNode} from 'react';
+import {useData} from '@/lib/api';
 import {CosmicBackground,useCosmicScene} from '@/components/CosmicBackground';
 
 export function AppShell({children}:{children:ReactNode}){
  const cosmos=useCosmicScene();
- const {snapshot,connected,now,chartStatus}=useData();
+ const {snapshot,isAdmin,user,connected,now,chartStatus}=useData();
  const stale=chartStatus?.data_at&&now/1000-chartStatus.data_at>chartStatus.interval_seconds*2+30;
  const chartLabel=chartStatus?.status==='closed'?'Mercado fechado':chartStatus?.status==='unavailable'?'Indisponível':chartStatus?.status==='loading'?'Carregando':chartStatus?.status==='stale'||stale?'Dados atrasados':chartStatus?.status==='live'?'Atualizado':'Não verificado';
  const status=connected?(chartStatus?'Gráfico: '+chartLabel:'Análise: '+(snapshot?.feed?.status||'Não verificado')):(snapshot?'Sem conexão':'Não verificado');
  const healthy=connected&&(chartStatus?chartLabel==='Atualizado':snapshot?.feed?.status==='disponível');
  const monitoring=snapshot?.scan?.active?(snapshot.scan.preview?'Prévia automática sem envio':'Monitoramento ativo'):snapshot?.analysis_active?'Prévia em andamento':'Monitoramento parado';
  const menu=useRef<HTMLDetailsElement>(null);
- const [publicAccess,setPublicAccess]=useState(false);
- useEffect(()=>{let active=true;api('/auth/status').then(r=>{if(active)setPublicAccess(Boolean(r.public_access))}).catch(()=>{});return()=>{active=false}},[]);
- const primary=[['/','Dashboard'],['/sinais','Sinais'],['/historico','Histórico'],['/calendario','Calendário diário'],['/noticias','Notícias'],['/telegram','Telegram']];
- const secondary=[['/universo-ia','Universo IA'],['/aprendizado','Aprendizado'],['/configuracoes','Configurações'],['/conexoes','Conexões'],['/validacao','Validação']];
- const active=(path:string)=>location.pathname===path||(path==='/'&&location.pathname==='/analise');
+ const publicAccess=Boolean(snapshot?.access?.public_access);
+ const primary=isAdmin?[['/bot','Dashboard'],['/sinais','Sinais'],['/historico','Histórico'],['/calendario','Calendário diário'],['/noticias','Notícias'],['/telegram','Telegram']]:[['/bot','Painel'],['/sinais','Sinais'],['/historico','Histórico'],['/universo-ia','Universo IA']];
+ const secondary=isAdmin?[['/universo-ia','Universo IA'],['/aprendizado','Aprendizado'],['/configuracoes','Configurações'],['/conexoes','Conexões'],['/validacao','Validação']]:[];
+ const active=(path:string)=>location.pathname===path||(path==='/bot'&&location.pathname==='/analise');
  useEffect(()=>{
   const close=(event:Event)=>{if(!menu.current?.open)return;const keyboard=event.type==='keydown';if(keyboard?(event as KeyboardEvent).key==='Escape':!menu.current.contains(event.target as Node)){menu.current.open=false;if(keyboard)menu.current.querySelector('summary')?.focus()}};
   document.addEventListener('click',close);document.addEventListener('keydown',close);
@@ -26,13 +25,13 @@ export function AppShell({children}:{children:ReactNode}){
   <CosmicBackground root={cosmos.root}/>
   <header className="app-header border-b border-border">
    <div className="app-header-layout">
-    <div className="app-header-brand"><a href="/" className="aurora-wordmark" aria-label="AURORA · Painel"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="9"/><ellipse cx="20" cy="20" rx="19" ry="7" transform="rotate(-35 20 20)"/><circle cx="32" cy="11" r="2"/></svg>AURORA</a><span aria-label="Versão do projeto" className="app-version">v{snapshot?.version||'—'}</span></div>
+    <div className="app-header-brand"><a href="/" className="aurora-wordmark" aria-label="AURORA · Página inicial"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="9"/><ellipse cx="20" cy="20" rx="19" ry="7" transform="rotate(-35 20 20)"/><circle cx="32" cy="11" r="2"/></svg>AURORA</a><span aria-label="Versão do projeto" className="app-version">v{snapshot?.version||'—'}</span></div>
     <nav aria-label="Navegação principal" className="app-header-nav">
      {primary.map(([path,title])=><a key={path} href={path} aria-current={active(path)?'page':undefined} className={'app-header-link rounded '+(active(path)?'bg-primary/10 text-primary':'text-muted-foreground hover:text-foreground')}>{title}</a>)}
      <details ref={menu} className="relative">
-      <summary className={'app-header-link list-none cursor-pointer rounded [&::-webkit-details-marker]:hidden '+(secondary.some(([path])=>active(path))?'bg-secondary':'text-muted-foreground hover:text-foreground')}>Mais <span aria-hidden="true">⌄</span></summary>
+      <summary className={'app-header-link list-none cursor-pointer rounded [&::-webkit-details-marker]:hidden '+(secondary.some(([path])=>active(path))?'bg-secondary':'text-muted-foreground hover:text-foreground')}>{isAdmin?"Mais":"Minha conta"} <span aria-hidden="true">⌄</span></summary>
       <div className="absolute right-0 z-30 mt-2 w-44 rounded-lg border border-border bg-card p-1 shadow-xl">
-       {secondary.map(([path,title])=><a key={path} href={path} aria-current={active(path)?'page':undefined} className={'block rounded px-3 py-2 '+(active(path)?'bg-secondary text-foreground':'text-muted-foreground hover:bg-accent hover:text-foreground')}>{title}</a>)}
+       {user&&<p className="break-words border-b border-border px-3 py-2 text-xs text-muted-foreground">{user.name}<span className="block">{isAdmin?"Administrador":"Acompanhamento"}</span></p>}{secondary.map(([path,title])=><a key={path} href={path} aria-current={active(path)?'page':undefined} className={'block rounded px-3 py-2 '+(active(path)?'bg-secondary text-foreground':'text-muted-foreground hover:bg-accent hover:text-foreground')}>{title}</a>)}
        {publicAccess&&<form method="post" action="/api/auth/logout"><button type="submit" className="w-full rounded px-3 py-2 text-left text-sm text-muted-foreground hover:bg-accent hover:text-foreground">Sair com segurança</button></form>}
       </div>
      </details>

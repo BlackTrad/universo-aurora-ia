@@ -12,7 +12,7 @@ import {chartTimeframeFor} from '@/lib/chartTimeframe';
 import {signalStage,telegramStage} from '@/lib/signalStatus';
 type MarketCandle={openTime:number;open:number;high:number;low:number;close:number};
 export default function Dashboard(){
- const {snapshot,connected,error,setError,now,refresh,reportChartStatus}=useData();
+ const {snapshot,isAdmin,connected,error,setError,now,refresh,reportChartStatus}=useData();
  const [selectedAsset,setSelectedAsset]=useState('EUR/USD'),[chartTimeframe,setChartTimeframe]=useState<string>('1m'),[chartSource,setChartSource]=useState(''),[followSignals,setFollowSignals]=useState(true);
  const [chartCandles,setChartCandles]=useState<MarketCandle[]>([]),[chartLoading,setChartLoading]=useState(false),[actionBusy,setActionBusy]=useState(false);
  const [chartMeta,setChartMeta]=useState<any>(null);
@@ -29,12 +29,12 @@ export default function Dashboard(){
 
  useEffect(()=>{if(!chartSource)return;let stop=false,timer:any;const controller=new AbortController();const info={source_key:chartSource,asset:selectedAsset,timeframe:tfLabel(chartTimeframe),interval_seconds:chartInterval/1000};async function load(){if(document.hidden){timer=setTimeout(load,15000);return;}setChartLoading(true);try{const d=await api('/chart?asset='+encodeURIComponent(selectedAsset)+'&source='+chartSource+'&timeframe='+tfLabel(chartTimeframe),undefined,undefined,controller.signal);if(d.source_key!==chartSource||d.asset!==selectedAsset||d.timeframe!==tfLabel(chartTimeframe))throw Error('Resposta do gráfico não corresponde ao instrumento solicitado.');if(!stop){setChartCandles(d.candles.map((c:any)=>({openTime:c.t*1000,open:c.o,high:c.h,low:c.l,close:c.c})));setChartMeta(d);reportChartStatus({...info,...d});}}catch(e:any){if(!stop){setChartMeta((old:any)=>({...old,status:'unavailable',detail:e.message}));reportChartStatus({...info,status:'unavailable'})}}finally{if(!stop){setChartLoading(false);timer=setTimeout(load,15000)}}}setChartCandles([]);setChartMeta(null);reportChartStatus({...info,status:'loading'});load();return()=>{stop=true;controller.abort();clearTimeout(timer)}},[selectedAsset,chartTimeframe,chartSource]);
  const toggleMonitoring=async()=>{
-  if(!snapshot||!connected||actionPending.current)return;
+  if(!isAdmin||!snapshot||!connected||actionPending.current)return;
   actionPending.current=true;setActionBusy(true);setError('');
   try{const stop=Boolean(snapshot.scan.active||snapshot.analysis_active);await api(stop?'/scan/stop':'/scan/start',stop?{}:snapshot.settings);await refresh()}
   catch(e:any){setError(e.message)}finally{actionPending.current=false;setActionBusy(false)};
  };
- const runScan=async()=>{if(!snapshot||actionPending.current)return;actionPending.current=true;setActionBusy(true);setError('');try{await api('/analyze',snapshot.settings);await refresh();}catch(e:any){setError(e.message)}finally{actionPending.current=false;setActionBusy(false)}};
+ const runScan=async()=>{if(!isAdmin||!snapshot||actionPending.current)return;actionPending.current=true;setActionBusy(true);setError('');try{await api('/analyze',snapshot.settings);await refresh();}catch(e:any){setError(e.message)}finally{actionPending.current=false;setActionBusy(false)}};
  const scanning=actionBusy||snapshot?.busy;
  const lastScan=snapshot?.analyses?.[0]?.finished_at*1000||null;
  const signals=(snapshot?.signals||[]).map(mapSignal);
@@ -65,12 +65,12 @@ export default function Dashboard(){
           <div className="relative flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-3">
               <span className={`h-3 w-3 rounded-full ${settings.monitoring ? "animate-pulse bg-bull" : "bg-muted-foreground"}`} />
-              <div><h2 className="font-semibold">{settings.monitoring ? (snapshot.scan.preview ? "Prévia automática sem envio" : "Análise em andamento") : snapshot?.analysis_active ? "Prévia em andamento" : "Iniciar análise"}</h2><p className="text-xs text-muted-foreground">{!settings.monitoring&&snapshot?.analysis_active ? "Prévia técnica sem envio. Você pode interromper em Parar." : snapshot?.scan?.message || "Aguardando início"} · última {lastScan ? fmtHMS(lastScan) : "—"}</p>{settings.monitoring&&snapshot.scan.next_run_at&&<p className="mt-1 text-xs text-muted-foreground" role="timer">Próxima avaliação em {fmtCountdown(snapshot.scan.next_run_at*1000-now)} · {tfLabel(settings.timeframe)}</p>}</div>
+              <div><h2 className="font-semibold">{settings.monitoring ? (snapshot.scan.preview ? "Prévia automática sem envio" : "Análise em andamento") : snapshot?.analysis_active ? "Prévia em andamento" : isAdmin ? "Iniciar análise" : "Acompanhando o bot"}</h2><p className="text-xs text-muted-foreground">{!settings.monitoring&&snapshot?.analysis_active ? (isAdmin?"Prévia técnica sem envio. Você pode interromper em Parar.":"Prévia técnica em andamento.") : snapshot?.scan?.message || "Aguardando início"} · última {lastScan ? fmtHMS(lastScan) : "—"}</p>{settings.monitoring&&snapshot.scan.next_run_at&&<p className="mt-1 text-xs text-muted-foreground" role="timer">Próxima avaliação em {fmtCountdown(snapshot.scan.next_run_at*1000-now)} · {tfLabel(settings.timeframe)}</p>}</div>
             </div>
-            <div className="flex w-full gap-2 sm:w-auto">
+            {isAdmin?<div className="flex w-full gap-2 sm:w-auto">
               <button onClick={runScan} disabled={scanning || settings.monitoring || !connected} className="flex-1 whitespace-nowrap rounded border border-border px-3 py-2 text-sm transition-colors hover:bg-accent disabled:opacity-50">{scanning ? "Analisando..." : "Analisar agora"}</button>
               <button disabled={actionBusy || !connected || (!canStop&&snapshot.busy)} onClick={toggleMonitoring} className={`flex-1 rounded px-4 py-2 text-sm font-semibold transition-all sm:flex-none ${canStop ? "bg-bear text-background" : "bg-primary text-primary-foreground"}`}>{canStop ? "Parar" : "Iniciar"}</button>
-            </div>
+            </div>:<p className="max-w-xs text-xs text-muted-foreground">Você acompanha os sinais. O administrador gerencia o monitoramento.</p>}
           </div>
         </section>
 
@@ -93,7 +93,7 @@ export default function Dashboard(){
           <div className="dashboard-primary">
             <section className={`panel-card signal-card p-3 text-sm animate-fade-in ${active ? "signal-glow" : ""}`} style={active ? ({ "--glow-color": active.direction === "CALL" ? "var(--bull)" : "var(--bear)", animationDelay: "160ms" } as CSSProperties) : { animationDelay: "160ms" }}>
               <h2 className="mb-2 font-sans text-xs font-semibold uppercase text-muted-foreground">Resultado da análise</h2>
-              {active ? <div key={active.id} className="animate-scale-in"><SignalCard s={active} now={now} /><button className="mt-2 rounded border border-border p-2 text-xs" onClick={()=>selectInstrument(active.source_key,active.asset,active.timeframe)}>Ver sinal no gráfico</button></div> : <div className="space-y-3"><p className="text-muted-foreground">{analysis?.message || "Inicie uma análise para avaliar os ativos com esta configuração."}</p>{risk.blockedReason && <p className="text-warn">⛔ {risk.blockedReason}{risk.pauseUntil ? ` — libera em ${fmtCountdown(risk.pauseUntil - now)}` : ""}</p>}{lastResolved && <p className="text-xs text-muted-foreground"><b className={lastResolved.result==="WIN"?"text-bull":lastResolved.result==="LOSS"||lastResolved.result==="CANCELADO"?"text-bear":"text-warn"}>{signalStage(lastResolved,now).label}</b> · Telegram: {telegramStage(lastResolved.telegram)}</p>}{lastResolved && <p className="text-sm text-muted-foreground">Último sinal: {assetLabel(lastResolved.asset)} {lastResolved.direction} → <span className={lastResolved.result === "WIN" ? "text-bull" : lastResolved.result === "LOSS" ? "text-bear" : "text-warn"}>{lastResolved.result}</span>{lastResolved.cancellation_reason && <span className="block text-xs">{lastResolved.cancellation_reason}</span>}</p>}</div>}
+              {active ? <div key={active.id} className="animate-scale-in"><SignalCard s={active} now={now} /><button className="mt-2 rounded border border-border p-2 text-xs" onClick={()=>selectInstrument(active.source_key,active.asset,active.timeframe)}>Ver sinal no gráfico</button></div> : <div className="space-y-3"><p className="text-muted-foreground">{analysis?.message || (isAdmin?"Inicie uma análise para avaliar os ativos com esta configuração.":"Aguardando uma oportunidade validada pelo bot.")}</p>{risk.blockedReason && <p className="text-warn">⛔ {risk.blockedReason}{risk.pauseUntil ? ` — libera em ${fmtCountdown(risk.pauseUntil - now)}` : ""}</p>}{lastResolved && <p className="text-xs text-muted-foreground"><b className={lastResolved.result==="WIN"?"text-bull":lastResolved.result==="LOSS"||lastResolved.result==="CANCELADO"?"text-bear":"text-warn"}>{signalStage(lastResolved,now).label}</b> · Telegram: {telegramStage(lastResolved.telegram)}</p>}{lastResolved && <p className="text-sm text-muted-foreground">Último sinal: {assetLabel(lastResolved.asset)} {lastResolved.direction} → <span className={lastResolved.result === "WIN" ? "text-bull" : lastResolved.result === "LOSS" ? "text-bear" : "text-warn"}>{lastResolved.result}</span>{lastResolved.cancellation_reason && <span className="block text-xs">{lastResolved.cancellation_reason}</span>}</p>}</div>}
             </section>
 
             <section className="panel-card chart-card overflow-hidden animate-fade-in" style={{ animationDelay: "120ms" }}>

@@ -63,7 +63,7 @@ def test_strict_login_cookie_logout_and_host(tmp_path):
             assert 'HttpOnly' in result.headers['set-cookie']
             assert 'SameSite=strict' in result.headers['set-cookie']
             assert client.get('/api/state').status_code==200
-            assert client.get('/api/auth/status').json()=={'public_access':True,'authenticated':True}
+            assert client.get('/api/auth/status').json()=={'public_access':True,'authenticated':True,'user':{'id':'admin','name':'Administrador','role':'admin'}}
             forbidden = client.put('/api/credentials', json={'telegram_chat':'@public'},headers={'Origin':ORIGIN})
             assert forbidden.status_code == 403
             assert 'variáveis privadas' in forbidden.json()['detail']

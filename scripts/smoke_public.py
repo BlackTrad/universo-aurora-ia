@@ -60,7 +60,9 @@ def inspect(base_url: str, *, client: httpx.Client) -> list[str]:
         '/api/validation/planetary-performance': 401,
         '/api/news': 401,
         '/api/instruments': 401,
-        '/': 303,
+        '/': 200,
+        '/registro': 200,
+        '/bot': 303,
         '/sinais': 303,
         '/historico': 303,
         '/calendario': 303,
@@ -71,6 +73,7 @@ def inspect(base_url: str, *, client: httpx.Client) -> list[str]:
         '/universo-ia': 303,
         '/validacao': 303,
         '/static/login.css': 200,
+        '/static/portal.css': 200,
     }
     for route, status in expected.items():
         try:
@@ -90,7 +93,7 @@ def inspect(base_url: str, *, client: httpx.Client) -> list[str]:
             except ValueError:
                 problems.append('/healthz: resposta JSON inválida.')
         if route == '/login' and ('type="password"' not in response.text or 'AURORA' not in response.text):
-            problems.append('/login: formulário administrativo não encontrado.')
+            problems.append('/login: formulário de acesso não encontrado.')
         if route.startswith('/api/'):
             if 'no-store' not in response.headers.get('cache-control', '').lower():
                 problems.append('/api/state: resposta anônima sem cache-control no-store.')

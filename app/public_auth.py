@@ -37,6 +37,19 @@ def make_password_hash(password: str, *, salt: bytes | None = None) -> str:
     return f'pbkdf2_sha256${ITERATIONS}${_b64(salt)}${_b64(digest)}'
 
 
+def verify_password_hash(password: str, encoded: str) -> bool:
+    try:
+        algorithm,count,salt,digest=encoded.split('$')
+        rounds=int(count)
+        if (algorithm!='pbkdf2_sha256' or not ITERATIONS<=rounds<=1_000_000 or
+                len(_decode(salt))!=16 or len(_decode(digest))!=32 or len(password)>256):
+            return False
+        computed=pbkdf2_hmac('sha256',password.encode('utf-8'),_decode(salt),rounds)
+        return hmac.compare_digest(computed,_decode(digest))
+    except (ValueError,TypeError,UnicodeEncodeError,OverflowError):
+        return False
+
+
 @dataclass(frozen=True)
 class PublicAuth:
     enabled: bool = False
@@ -77,12 +90,26 @@ class PublicAuth:
         return urlsplit(self.origin).hostname or ''
 
     def correct_password(self, password: str) -> bool:
+        return verify_password_hash(password,self.password_hash)
+
+    def new_user_cookie(self,identity: str,now: int | None = None) -> str:
+        if not re.fullmatch(r'[0-9a-f]{32}',identity):raise ValueError('Conta inválida.')
+        expiry=int(time.time() if now is None else now)+SESSION_SECONDS
+        payload=f'v2.{expiry}.{identity}.{secrets.token_hex(16)}'
+        return payload+'.'+_b64(hmac.new(self.session_key,payload.encode(),sha256).digest())
+
+    def user_id_from_cookie(self,value: str | None,now: int | None = None) -> str | None:
+        if not value or len(value)>256:return None
         try:
-            _, count, salt, digest = self.password_hash.split('$')
-            computed = pbkdf2_hmac('sha256', password.encode('utf-8'), _decode(salt), int(count))
-            return hmac.compare_digest(computed, _decode(digest))
-        except (ValueError, UnicodeEncodeError):
-            return False
+            version,expiry,identity,nonce,signature=value.split('.')
+            if version!='v2' or not re.fullmatch(r'[0-9]{10,12}',expiry):return None
+            if not re.fullmatch(r'[0-9a-f]{32}',identity) or not re.fullmatch(r'[0-9a-f]{32}',nonce):return None
+            current=int(time.time() if now is None else now)
+            if not current<int(expiry)<=current+SESSION_SECONDS:return None
+            payload=f'v2.{expiry}.{identity}.{nonce}'
+            expected=_b64(hmac.new(self.session_key,payload.encode(),sha256).digest())
+            return identity if hmac.compare_digest(expected,signature) else None
+        except (ValueError,TypeError,OverflowError):return None
 
     def new_cookie(self, now: int | None = None) -> str:
         expiry = int(time.time() if now is None else now) + SESSION_SECONDS

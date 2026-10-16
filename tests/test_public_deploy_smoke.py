@@ -33,7 +33,9 @@ def _transport(request):
         return httpx.Response(200,json={'status':'ok'})
     if route=='/login':
         return httpx.Response(200,text='<title>AURORA</title><input type="password"/>')
-    if route=='/static/login.css':
+    if route in ('/','/registro'):
+        return httpx.Response(200,text='<title>AURORA</title>')
+    if route in ('/static/login.css','/static/portal.css'):
         return httpx.Response(200,text='main{display:block}')
     if route.startswith('/api/'):
         return httpx.Response(401,headers={'Cache-Control':'no-store'},json={'detail':'login'})

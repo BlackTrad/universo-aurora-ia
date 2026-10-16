@@ -15,7 +15,9 @@ from tests.test_system import Feed, TG
 def test_pages_do_not_launch_analysis_or_change_settings(tmp_path):
     with TestClient(create_app(Config(database=str(tmp_path / 'aurora.db')), Feed(), TG())) as client:
         before = client.get('/api/state').json()
-        for route in ('/', '/configuracoes', '/aprendizado', '/analise'):
+        home=client.get('/')
+        assert home.status_code==200 and '/static/portal.css' in home.text
+        for route in ('/bot', '/configuracoes', '/aprendizado', '/analise'):
             page = client.get(route)
             assert page.status_code == 200
             assert '/static/assets/' in page.text

@@ -1,5 +1,5 @@
 import asyncio
-from collections import deque
+from collections import deque, OrderedDict
 import contextlib
 import ipaddress
 import logging
@@ -20,6 +20,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel,Field
 from urllib.parse import parse_qs
 from .public_auth import PublicAuth, COOKIE_NAME, SESSION_SECONDS
+from .accounts import Accounts, RegistrationError
+from .access import VIEWER_READS, VIEWER_PAGES, viewer_snapshot, viewer_signal
+from .public_pages import landing_page, auth_page
 from .config import Config,ROOT
 from .store import Store
 from .market import validate_latest, DataError
@@ -98,8 +101,12 @@ def create_app(config=None,provider=None,telegram=None,credentials_path=None,clo
                 event('backend.database_failed',level=logging.ERROR,exc_info=True)
                 if lockfile: lockfile.close()
                 raise
-            service=None;worker=None
+            service=None;worker=None;accounts=None
             try:
+                if public_auth.enabled:
+                    account_path=':memory:' if cfg.database==':memory:' else str(Path(cfg.database).with_suffix('.accounts.db'))
+                    accounts=Accounts(account_path)
+                app.state.accounts=accounts
                 if provider is not None:
                     providers=None
                 elif cfg.asset_scope in ('forex','crypto_binary'):
@@ -118,7 +125,7 @@ def create_app(config=None,provider=None,telegram=None,credentials_path=None,clo
                         except Exception: event('maintenance.failed',level=logging.ERROR,exc_info=True)
                         await asyncio.sleep(2)
                 worker=asyncio.create_task(maintenance())
-                register_secrets(cfg.telegram_token,cfg.telegram_chat,cfg.admin_token,cfg.gemini_api_key,cfg.groq_api_key,cfg.nvidia_api_key)
+                register_secrets(cfg.telegram_token,cfg.telegram_chat,cfg.admin_token,cfg.gemini_api_key,cfg.groq_api_key,cfg.nvidia_api_key,cfg.nemotron_api_key,cfg.glm_api_key,cfg.kimi_api_key)
                 event('backend.configuration',assets=cfg.assets,telegram_configured=service.telegram.configured)
                 event('backend.ready',provider=service.provider_key,strategy=service.strategy_key,
                       limits=service.store.risk_settings(),rules_version=RULES_VERSION,pipeline_version=PIPELINE_VERSION)
@@ -136,6 +143,7 @@ def create_app(config=None,provider=None,telegram=None,credentials_path=None,clo
                     if service.research:await asyncio.to_thread(service.research.close)
                     if service.observer:await asyncio.to_thread(service.observer.close)
                 await asyncio.to_thread(store.close)
+                if accounts:await asyncio.to_thread(accounts.close)
                 if lockfile: lockfile.close()
                 event('backend.stopped')
 
@@ -148,8 +156,16 @@ def create_app(config=None,provider=None,telegram=None,credentials_path=None,clo
             {'loc':list(e['loc']),'type':e['type'],'msg':'Valor inválido para este campo.'}
             for e in exc.errors()]})
 
-    request_windows = {'read': deque(), 'write': deque()}
-    login_attempts=deque()
+    request_windows = OrderedDict()
+    login_attempts=OrderedDict()
+    registration_attempts=deque()
+
+    def current_user(request):
+        if not public_auth.enabled:return {'id':'admin','name':'Administrador','role':'admin'}
+        cookie=request.cookies.get(COOKIE_NAME)
+        if public_auth.valid_cookie(cookie):return {'id':'admin','name':'Administrador','role':'admin'}
+        identity=public_auth.user_id_from_cookie(cookie)
+        return app.state.accounts.get(identity) if identity and app.state.accounts else None
 
     @app.middleware('http')
     async def guard(request,call_next):
@@ -182,16 +198,27 @@ def create_app(config=None,provider=None,telegram=None,credentials_path=None,clo
                     return Response('Origem não permitida',403)
             elif origin and origin.rstrip('/')!=str(request.base_url).rstrip('/'):
                 return Response('Origem não permitida',403)
-        if public_auth.enabled and not (path in ('/login','/api/auth/login') or
-                                        path.startswith('/static/')):
-            if not public_auth.valid_cookie(request.cookies.get(COOKIE_NAME)):
+        user=current_user(request)
+        request.state.user=user
+        anonymous=path in ('/','/login','/registro','/cadastro','/api/auth/login','/api/auth/register') or path.startswith('/static/')
+        if public_auth.enabled and not anonymous:
+            if not user:
                 if path.startswith('/api/'):
                     return JSONResponse({'detail':'Faça login para acessar o painel.'},status_code=401,
                                         headers={'Cache-Control':'no-store'})
                 return RedirectResponse('/login',status_code=303)
+            if user['role']!='admin':
+                allowed=(not mutation and path in VIEWER_READS) or (path=='/api/auth/logout' and request.method=='POST')
+                if path.startswith('/api/') and not allowed:
+                    return JSONResponse({'detail':'Este recurso é exclusivo do administrador.'},status_code=403,headers={'Cache-Control':'no-store'})
+                if not path.startswith('/api/') and path not in VIEWER_PAGES:
+                    return RedirectResponse('/bot',status_code=303)
         if path.startswith('/api/'):
             now=time.monotonic()
-            window=request_windows['write' if mutation else 'read']
+            key=(user['id'] if user else 'anonymous','write' if mutation else 'read')
+            window=request_windows.setdefault(key,deque())
+            request_windows.move_to_end(key)
+            while len(request_windows)>4096:request_windows.popitem(last=False)
             while window and now-window[0]>=60:window.popleft()
             if len(window)>=(60 if mutation else 240):
                 return Response('Muitas requisições. Aguarde e tente novamente.',429,headers={'Retry-After':str(max(1,int(60-(now-window[0]))+1)),'Cache-Control':'no-store'})
@@ -203,7 +230,7 @@ def create_app(config=None,provider=None,telegram=None,credentials_path=None,clo
                 return Response('Requisição muito grande',413)
         response=await call_next(request)
         response.headers.update({'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
-            'Referrer-Policy':'no-referrer','X-Frame-Options':'DENY',
+            'Referrer-Policy':'same-origin','X-Frame-Options':'DENY',
             'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"})
         return response
 
@@ -226,64 +253,98 @@ def create_app(config=None,provider=None,telegram=None,credentials_path=None,clo
     async def healthz():
         return {'status':'ok'}
 
+    @app.get('/',response_class=HTMLResponse)
+    async def home(request:Request):
+        return HTMLResponse(landing_page(authenticated=bool(request.state.user) if public_auth.enabled else True))
+
     @app.get('/login',response_class=HTMLResponse)
     async def login_form(request:Request):
-        if not public_auth.enabled:
-            raise HTTPException(404)
-        if public_auth.valid_cookie(request.cookies.get(COOKIE_NAME)):
-            return RedirectResponse('/',status_code=303)
-        failed = request.query_params.get('error') == '1'
-        error_message = '<p role="alert" class="error">Senha inválida. Tente novamente.</p>' if failed else ''
-        return HTMLResponse('''<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>AURORA IA · Acesso administrativo</title>
-<link rel="stylesheet" href="/static/login.css"/></head><body><main><div class="brand">◉ AURORA IA</div>
-<h1>Painel administrativo</h1><p>Entre para acessar seus sinais e configurações.</p>''' + error_message + '''<form action="/api/auth/login" method="post">
-<label for="password">Senha de acesso</label><input id="password" name="password" type="password"
-minlength="12" maxlength="256" autocomplete="current-password" required autofocus/>
-<button type="submit">Entrar</button></form><small>Conexão protegida · Sessão de duração limitada</small>
-</main></body></html>''')
+        if not public_auth.enabled:return RedirectResponse('/bot',status_code=303)
+        if request.state.user:return RedirectResponse('/bot',status_code=303)
+        error='E-mail ou senha inválidos. Confira seus dados e tente novamente.' if request.query_params.get('error')=='1' else ''
+        return HTMLResponse(auth_page(error=error))
 
-    @app.post('/api/auth/login')
-    async def authenticate(request:Request):
-        if not public_auth.enabled:
-            raise HTTPException(404)
-        now=time.monotonic()
-        while login_attempts and now-login_attempts[0]>300:
-            login_attempts.popleft()
-        if len(login_attempts)>=10:
-            return Response('Muitas tentativas. Aguarde alguns minutos.',429,
-                            headers={'Retry-After':'300','Cache-Control':'no-store'})
+    @app.get('/cadastro')
+    async def register_alias():
+        return RedirectResponse('/registro',status_code=303)
+
+    @app.get('/registro',response_class=HTMLResponse)
+    async def registration_form(request:Request):
+        if not public_auth.enabled or request.state.user:return RedirectResponse('/bot',status_code=303)
+        return HTMLResponse(auth_page(register=True))
+
+    async def form_fields(request,allowed):
         if not request.headers.get('content-type','').startswith('application/x-www-form-urlencoded'):
-            raise HTTPException(415)
-        body=await request.body()
-        if len(body)>1024:
-            raise HTTPException(413)
+            raise HTTPException(415,'Envie os dados pelo formulário de acesso.')
         try:
-            fields=parse_qs(body.decode('utf-8'),strict_parsing=True,max_num_fields=2)
-            supplied=fields.get('password',[''])[0]
+            body=await request.body()
+            if len(body)>8192:raise HTTPException(413)
+            fields=parse_qs(body.decode('utf-8'),strict_parsing=True,max_num_fields=len(allowed),keep_blank_values=True)
+            if any(key not in allowed or len(value)!=1 for key,value in fields.items()):raise ValueError()
+            return {key:value[0] for key,value in fields.items()}
         except (UnicodeDecodeError,ValueError):
-            supplied=''
-        if not 12<=len(supplied)<=256 or not public_auth.correct_password(supplied):
-            login_attempts.append(now)
-            return RedirectResponse('/login?error=1',status_code=303)
-        login_attempts.clear()
-        response=RedirectResponse('/',status_code=303)
-        response.set_cookie(COOKIE_NAME,public_auth.new_cookie(),secure=True,httponly=True,
+            raise HTTPException(422,'Formulário inválido. Confira os campos e tente novamente.') from None
+
+    def authenticated_response(cookie):
+        response=RedirectResponse('/bot',status_code=303)
+        response.set_cookie(COOKIE_NAME,cookie,secure=True,httponly=True,
                             samesite='strict',max_age=SESSION_SECONDS,path='/')
         return response
 
+    @app.post('/api/auth/login')
+    async def authenticate(request:Request):
+        if not public_auth.enabled:raise HTTPException(404)
+        fields=await form_fields(request,{'identifier','password'})
+        supplied=fields.get('password','')
+        identifier=fields.get('identifier','admin').strip().casefold()
+        # Bounded per-identifier counters protect users sharing the platform proxy.
+        from hashlib import sha256
+        key=sha256(identifier.encode('utf-8')).hexdigest()
+        attempts=login_attempts.setdefault(key,deque())
+        login_attempts.move_to_end(key)
+        while len(login_attempts)>1024:login_attempts.popitem(last=False)
+        now=time.monotonic()
+        while attempts and now-attempts[0]>=300:attempts.popleft()
+        if len(attempts)>=10:
+            return HTMLResponse(auth_page(error='Muitas tentativas. Aguarde cinco minutos antes de tentar novamente.'),status_code=429,headers={'Retry-After':'300'})
+        # Count before awaiting the hash so simultaneous failures share the limit.
+        attempts.append(now)
+        if identifier=='admin':
+            valid=await asyncio.to_thread(public_auth.correct_password,supplied)
+            cookie=public_auth.new_cookie() if valid and 12<=len(supplied)<=256 else None
+        else:
+            profile=await asyncio.to_thread(app.state.accounts.authenticate,identifier,supplied)
+            cookie=public_auth.new_user_cookie(profile['id']) if profile else None
+        if not cookie:return RedirectResponse('/login?error=1',status_code=303)
+        attempts.clear()
+        return authenticated_response(cookie)
+
+    @app.post('/api/auth/register')
+    async def register(request:Request):
+        if not public_auth.enabled:raise HTTPException(404)
+        now=time.monotonic()
+        while registration_attempts and now-registration_attempts[0]>=3600:registration_attempts.popleft()
+        if len(registration_attempts)>=60:
+            return HTMLResponse(auth_page(register=True,error='Cadastros temporariamente limitados. Tente novamente mais tarde.'),status_code=429,headers={'Retry-After':'3600'})
+        fields=await form_fields(request,{'name','email','password','confirmation'})
+        registration_attempts.append(now)
+        try:
+            profile=await asyncio.to_thread(app.state.accounts.create,fields.get('name',''),fields.get('email',''),
+                                           fields.get('password',''),fields.get('confirmation',''))
+        except RegistrationError as error:
+            return HTMLResponse(auth_page(register=True,error=str(error)),status_code=422)
+        return authenticated_response(public_auth.new_user_cookie(profile['id']))
+
     @app.post('/api/auth/logout')
     async def logout():
-        if not public_auth.enabled:
-            raise HTTPException(404)
+        if not public_auth.enabled:raise HTTPException(404)
         response=RedirectResponse('/login',status_code=303)
         response.delete_cookie(COOKIE_NAME,path='/',secure=True,httponly=True,samesite='strict')
         return response
 
     @app.get('/api/auth/status')
-    async def auth_status():
-        return {'public_access':public_auth.enabled,'authenticated':True}
+    async def auth_status(request:Request):
+        return {'public_access':public_auth.enabled,'authenticated':True,'user':request.state.user}
 
     quotes=Quotes()
 
@@ -330,7 +391,10 @@ minlength="12" maxlength="256" autocomplete="current-password" required autofocu
         return manual_catalog()
 
     @app.get('/api/state')
-    async def state(): return app.state.service.snapshot()
+    async def state(request:Request):
+        snapshot=app.state.service.snapshot()
+        if request.state.user['role']!='admin':snapshot=viewer_snapshot(snapshot)
+        return {**snapshot,'access':{'public_access':public_auth.enabled,'user':request.state.user}}
 
     @app.get('/api/strategy-review')
     async def strategy_review(page:int=Query(1,ge=1,le=1000000),page_size:int=Query(8,ge=1,le=20),
@@ -576,7 +640,7 @@ minlength="12" maxlength="256" autocomplete="current-password" required autofocu
         return service.store.clear_history(body.scope,body.period,service.clock(),start,end)
 
     @app.get('/api/history')
-    async def history(page:int=Query(1,ge=1,le=1000000),page_size:int=Query(20,ge=1,le=50),
+    async def history(request:Request,page:int=Query(1,ge=1,le=1000000),page_size:int=Query(20,ge=1,le=50),
             asset:str|None=Query(None,max_length=20),source:Literal['twelvedata','deriv','binance','coinbase']|None=None,
             direction:Literal['CALL','PUT']|None=None,
             state:Literal['aguardando entrada','em andamento','encerrado','cancelado']|None=None,
@@ -591,7 +655,9 @@ minlength="12" maxlength="256" autocomplete="current-password" required autofocu
             if end_date==date.max: raise HTTPException(422,'Data final inválida.')
             end=datetime.combine(end_date+timedelta(days=1),day_time.min,tzinfo=tz).timestamp()
         if start is not None and end is not None and start>=end: raise HTTPException(422,'Período inválido.')
-        return app.state.service.store.history(page,page_size,asset,source,direction,state,start,end,snapshot_id,strategy)
+        result=app.state.service.store.history(page,page_size,asset,source,direction,state,start,end,snapshot_id,strategy)
+        if request.state.user['role']!='admin':result={**result,'items':[viewer_signal(row) for row in result['items']]}
+        return result
 
     @app.get('/api/aurora/metrics')
     @app.get('/api/apex/metrics')
@@ -745,7 +811,7 @@ minlength="12" maxlength="256" autocomplete="current-password" required autofocu
             raise HTTPException(409,'Sinal já enviado ou envio incerto. Cancelamento local não notificaria o Telegram.')
         return service.store.patch(sid,{'state':'cancelado','result':'Resultado indisponível','settlement_pending':False},'cancelado',service.clock())
 
-    @app.get('/')
+    @app.get('/bot')
     @app.get('/analise')
     @app.get('/historico')
     @app.get('/conexoes')

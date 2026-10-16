@@ -65,3 +65,14 @@
   .signal-card {padding: 14px !important;}
   .market-chart-host {height: 300px;}
 }
+
+/* Reading history on narrow screens never requires horizontal scrolling. */
+@media (max-width:760px){
+ .history-table,.history-table tbody{display:block;width:100%;min-width:0}
+ .history-table thead{display:none}
+ .history-table tbody tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);padding:12px;gap:10px;border-bottom:1px solid var(--border)}
+ .history-table tbody td{display:block;padding:0;min-width:0;overflow-wrap:anywhere;font-size:12px}
+ .history-table tbody td:before{content:attr(data-label);display:block;color:var(--muted-foreground);font-family:var(--font-sans);font-size:10px;margin-bottom:3px}
+ .history-table tbody td:first-child,.history-table tbody td:nth-child(6){grid-column:1/-1}
+ .history-table tbody td[colspan]{grid-column:1/-1;padding:12px 0}
+}

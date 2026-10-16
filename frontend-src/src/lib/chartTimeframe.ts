@@ -6,5 +6,5 @@ export function chartTimeframeFor(provider:string,requested:string):string {
 
 // Navigate from diagnostics without changing the operational configuration.
 export function chartLink(provider:string,asset:string,timeframe='M1'):string {
- return '/?'+new URLSearchParams({source:provider,asset,timeframe}).toString();
+ return '/bot?'+new URLSearchParams({source:provider,asset,timeframe}).toString();
 }
