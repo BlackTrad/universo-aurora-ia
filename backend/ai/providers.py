@@ -37,18 +37,35 @@ class AIProviderError(Exception):
         super().__init__(status)
 
 
+class ProviderBudget:
+    """One quota and cooldown per provider, including its separate credentials."""
+    def __init__(self):
+        self.semaphore=asyncio.Semaphore(2)
+        self.request_times=deque()
+        self.cooldown_until=0.0
+
+
 class ProviderCoordinator:
-    def __init__(self, provider_key: str, base_url: str, api_key: str, client: httpx.AsyncClient):
+    def __init__(self, provider_key: str, base_url: str, api_key: str, client: httpx.AsyncClient,
+                 *, budget: ProviderBudget | None = None):
         self.provider_key=provider_key
         self.base_url=base_url.rstrip('/')
         self.api_key=api_key
         self.client=client
-        self.semaphore=asyncio.Semaphore(2)
+        self.budget=budget if budget is not None else ProviderBudget()
+        self.semaphore=self.budget.semaphore
         self.models_lock=asyncio.Lock()
         self.models_cache: set[str] | None=None
         self.models_until=0.0
-        self.cooldown_until=0.0
-        self.request_times=deque()
+        self.request_times=self.budget.request_times
+
+    @property
+    def cooldown_until(self) -> float:
+        return self.budget.cooldown_until
+
+    @cooldown_until.setter
+    def cooldown_until(self, value: float) -> None:
+        self.budget.cooldown_until=value
 
     def _check_budget(self) -> None:
         now=time.monotonic()
@@ -214,13 +231,21 @@ def build_planetary_agents(config, client: httpx.AsyncClient) -> list[PlanetaryA
     groq=ProviderCoordinator('groq',GROQ_URL,config.groq_api_key,client)
     nvidia=ProviderCoordinator('nvidia',NVIDIA_URL,config.nvidia_api_key,client)
     gemini=ProviderCoordinator('gemini',GEMINI_URL,config.gemini_api_key,client)
+    # Catalogs belong to credentials; rate limits belong to the provider.
+    # Reuse the old NVIDIA key when a separate key was not supplied.
+    nvidia_credentials={config.nvidia_api_key:nvidia}
+    def nvidia_for(field):
+        key=getattr(config,field,'') or config.nvidia_api_key
+        if key not in nvidia_credentials:
+            nvidia_credentials[key]=ProviderCoordinator('nvidia',NVIDIA_URL,key,client,budget=nvidia.budget)
+        return nvidia_credentials[key]
     specifications=(
         ('Groq','groq',config.groq_model,'Price Action: força e comando das velas, rejeições, exaustão, continuação e correções.',groq),
         ('NVIDIA','nvidia',config.nvidia_trend_model,'tendência: EMA, RSI, MACD, momentum M1/M5, continuação e retração.',nvidia),
-        ('Nemotron','nvidia',config.nvidia_nemotron_model,'estrutura SMC: BOS, CHoCH, MSS e liquidez, somente quando presentes.',nvidia),
-        ('GLM','nvidia',config.nvidia_glm_model,'liquidez: falsos rompimentos, reversões, rejeições e Fibonacci, somente com dados presentes.',nvidia),
+        ('Nemotron','nvidia',config.nvidia_nemotron_model,'estrutura SMC: BOS, CHoCH, MSS e liquidez, somente quando presentes.',nvidia_for('nemotron_api_key')),
+        ('GLM','nvidia',config.nvidia_glm_model,'liquidez: falsos rompimentos, reversões, rejeições e Fibonacci, somente com dados presentes.',nvidia_for('glm_api_key')),
         ('Gemini','gemini',config.gemini_model,'confluências, contradições, volatilidade e fatores desfavoráveis.',gemini),
-        ('Kimi','nvidia',config.nvidia_kimi_model,'análise crítica, armadilhas, cenários alternativos e condições para NEUTRO.',nvidia),
+        ('Kimi','nvidia',config.nvidia_kimi_model,'análise crítica, armadilhas, cenários alternativos e condições para NEUTRO.',nvidia_for('kimi_api_key')),
     )
     return [PlanetaryAgent(name=name,provider_key=provider,model=model,role=role,coordinator=coordinator)
             for name,provider,model,role,coordinator in specifications]

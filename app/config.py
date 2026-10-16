@@ -35,6 +35,9 @@ class Config:
     experimental_collect: bool = False
     experimental_filters: tuple[str, ...] = ()
     selection_observation: bool = False
+    nemotron_api_key: str = field(default='',repr=False)
+    glm_api_key: str = field(default='',repr=False)
+    kimi_api_key: str = field(default='',repr=False)
 
     def validate(self):
         from .strategies import RETIRED_KEYS
@@ -131,6 +134,9 @@ class Config:
             telegram_token=os.getenv('TELEGRAM_BOT_TOKEN',''), telegram_chat=os.getenv('TELEGRAM_CHAT_ID',''),
             groq_api_key=os.getenv('GROQ_API_KEY',''),groq_model=os.getenv('GROQ_MODEL','llama-3.3-70b-versatile'),
             nvidia_api_key=os.getenv('NVIDIA_API_KEY',''),
+            nemotron_api_key=os.getenv('NEMOTRON_API_KEY',''),
+            glm_api_key=os.getenv('GLM_API_KEY',''),
+            kimi_api_key=os.getenv('KIMI_API_KEY',''),
             nvidia_trend_model=os.getenv('NVIDIA_TREND_MODEL','meta/llama-3.3-70b-instruct'),
             nvidia_nemotron_model=os.getenv('NVIDIA_NEMOTRON_MODEL','nvidia/llama-3.1-nemotron-70b-instruct'),
             nvidia_glm_model=os.getenv('NVIDIA_GLM_MODEL','z-ai/glm-5-3'),
