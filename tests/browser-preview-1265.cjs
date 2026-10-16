@@ -1,0 +1,80 @@
+// Synthetic local service; no real Telegram, trading or performance evidence.
+const {spawn}=require('node:child_process'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
+const pw=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+(async()=>{
+ const root=process.env.AURORA_TEST_ROOT||path.resolve(__dirname,'..'),url='http://127.0.0.1:8129';
+ const out=process.env.AURORA_TEST_ARTIFACT_DIR||path.join(root,'validation',require('./package.json').version,'screenshots');fs.mkdirSync(out,{recursive:true});
+ const server=spawn(process.env.AURORA_TEST_PYTHON||'python',['-m','uvicorn','tests.browser_preview_server:app','--host','127.0.0.1','--port','8129'],{cwd:root,stdio:['ignore','ignore','pipe']});let browser;
+ try{
+  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('startup timeout')),15000);server.stderr.on('data',d=>{if(d.toString().includes('Application startup complete')){clearTimeout(timer);resolve()}})});
+  browser=await pw.chromium.launch({executablePath:process.env.CHROMIUM_PATH,args:['--no-sandbox','--disable-gpu','--no-zygote']});
+  const page=await browser.newPage({viewport:{width:1366,height:950}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/api/news',r=>r.fulfill({json:{status:'unavailable',items:[],updated_at:null}}));
+  await page.request.post(url+'/_test/public_sources');
+  const base={provider:'deriv',strategy:'scan_all',assets:['EUR/USD','GBP/USD'],timeframe:'M5',duration_seconds:300};
+  assert((await page.request.put(url+'/api/settings',{data:base})).ok());
+  await page.request.post(url+'/_test/preview_mode?mode=none');
+  await page.goto(url);
+  const showPreview=async()=>{await page.getByRole('link',{name:'Configurações',exact:true}).click();await page.getByText('Prévia por ativo · detalhes da última análise',{exact:true}).click()};
+  const runPreview=async()=>{await page.getByRole('link',{name:'Painel',exact:true}).click();await page.getByRole('button',{name:'Analisar agora',exact:true}).click();await page.getByRole('button',{name:'Analisar agora',exact:true}).waitFor();await showPreview()};
+  await showPreview();
+  const preview=page.getByRole('region',{name:'Prévia por ativo',exact:true});
+  await preview.getByText('Prévia por ativo',{exact:true}).waitFor();
+  assert.equal(await preview.locator('li').count(),2);
+  await runPreview();
+  await preview.locator('li[data-preview-status="no_setup"]').nth(1).waitFor();
+  assert.equal(await preview.getByText('Sem prévia disponível.',{exact:true}).count(),0);
+  assert.equal(await preview.getByText('CALL',{exact:true}).count(),0);
+  let state=await(await page.request.get(url+'/api/state')).json();assert.equal(state.signals.length,0);assert.equal(state.analyses[0].ranking.length,0);
+  await preview.getByRole('button',{name:'Ver GBP/USD no gráfico',exact:true}).click();
+  await page.locator('h2').filter({hasText:'GBP/USD'}).waitFor();
+  await showPreview();
+  await page.request.post(url+'/_test/preview_mode?mode=blocked');
+  await runPreview();
+  await preview.locator('li[data-preview-status="blocked"]').nth(1).waitFor();
+  assert((await preview.innerText()).includes('Critérios obrigatórios do manual incompletos'));
+  assert.equal(await preview.getByText('CALL',{exact:true}).count(),0);
+  // An obsolete M5 analysis cannot populate a new M1 or duration configuration.
+  await page.request.put(url+'/api/settings',{data:{...base,timeframe:'M1'}});
+  await preview.getByText(/M1 · duração 5 min/).waitFor();await preview.locator('li[data-preview-status="waiting"]').nth(1).waitFor();
+  await page.request.put(url+'/api/settings',{data:{...base,duration_seconds:60}});
+  await preview.getByText(/M5 · duração 1 min/).waitFor();assert.equal(await preview.locator('li[data-preview-status="waiting"]').count(),2);
+  assert((await page.request.put(url+'/api/connection',{data:{provider:'binance'}})).ok());
+  assert((await page.request.put(url+'/api/settings',{data:{...base,provider:'binance',assets:['BTC/USDT']}})).ok());
+  await preview.getByText('Última análise · Binance',{exact:true}).waitFor();
+  assert.equal(await preview.locator('li[data-preview-status="waiting"]').count(),1);
+  assert.equal(await preview.getByRole('button',{name:'Ver EUR/USD no gráfico',exact:true}).count(),0);
+  assert((await page.request.put(url+'/api/connection',{data:{provider:'deriv'}})).ok());
+  assert((await page.request.put(url+'/api/settings',{data:base})).ok());
+  await preview.getByText('Última análise · TESTE SINTÉTICO',{exact:true}).waitFor();
+  await preview.getByText(/M5 · duração 5 min/).waitFor();
+  await page.request.post(url+'/_test/preview_mode?mode=unavailable');
+  await runPreview();
+  await preview.locator('li[data-preview-status="data_error"]').nth(1).waitFor();
+  assert((await preview.innerText()).includes('Fonte indisponível no teste controlado.'));
+  await page.request.post(url+'/_test/preview_mode?mode=qualified');
+  await runPreview();
+  await preview.locator('li[data-preview-status="candidate"]').first().waitFor();
+  await preview.getByText('0 de 30 resultados necessários',{exact:true}).first().waitFor();
+  state=await(await page.request.get(url+'/api/state')).json();assert.equal(state.signals.length,0);
+  const offline=r=>r.fulfill({status:503,json:{detail:'Teste sem conexão'}});
+  await page.route('**/api/state',offline);
+  await preview.getByText('Sem conexão · última análise',{exact:true}).first().waitFor();assert.equal(await preview.getByText('CALL',{exact:true}).count(),0);
+  await page.unroute('**/api/state',offline);await preview.getByText('CALL',{exact:true}).first().waitFor();
+  // Labels for stale decision-time quotes must not become new opportunities.
+  const stale=async r=>{const s=await(await r.fetch()).json();for(const a of s.analyses)for(const row of a.asset_previews||[])if(row.data_at)row.data_at=s.server_time-1000;await r.fulfill({json:s})};
+  await page.route('**/api/state',stale);await preview.getByText('Última análise · dados antigos',{exact:true}).first().waitFor();assert.equal(await preview.getByText('CALL',{exact:true}).count(),0);await page.unroute('**/api/state',stale);
+  for(const width of [1366,390,360]){await page.setViewportSize({width,height:950});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:path.join(out,'preview-1265-'+width+'.png'),fullPage:true})}
+  await page.getByRole('link',{name:'Painel',exact:true}).click();
+  await page.getByRole('button',{name:'Iniciar',exact:true}).click();await page.getByRole('timer').filter({hasText:'Próxima avaliação em'}).waitFor();
+  await page.getByText('Nova oportunidade identificada',{exact:true}).waitFor();
+  assert.equal(await page.getByText('Explicação do motor',{exact:true}).count(),1);
+  await page.getByRole('button',{name:'Parar',exact:true}).click();await page.getByRole('button',{name:'Iniciar',exact:true}).waitFor();
+  assert((await page.request.post(url+'/_test/expire')).ok());
+  await page.getByRole('link',{name:'Aprendizado',exact:true}).click();
+  const learning=page.getByLabel('Aprendizado por histórico',{exact:true});await learning.locator('summary').click();
+  await learning.getByText(/Último retorno:/).waitFor();assert((await learning.innerText()).includes('Sem ajuste por este resultado isolado.'));
+  assert.deepEqual(errors,[]);
+  console.log('PASS per-asset no-setup/block/data-failure visibility, candidate preview without emission, chart navigation, provider/timeframe/duration isolation, offline/stale labels, next-candle countdown, full motor context in frontend, outcome feedback without isolated tuning, desktop/mobile and no JavaScript errors');
+ }finally{if(browser)await browser.close();server.kill()}
+})().catch(e=>{console.error(e);process.exitCode=1});

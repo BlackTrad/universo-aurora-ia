@@ -1,0 +1,26 @@
+.env
+.env.*
+!.env.example
+.venv*
+__pycache__
+.pytest_cache
+data
+tests
+docs
+validation
+logs
+node_modules
+.git
+estudos
+backtest-resultados
+*.db*
+*.sqlite*
+*.log
+*.log.*
+*.zip
+*.tmp
+# Assets locais antigos são deliberadamente descartados: build Node os regenera.
+frontend
+# CI and deployment metadata are not needed inside the runtime image.
+.github
+railway.json

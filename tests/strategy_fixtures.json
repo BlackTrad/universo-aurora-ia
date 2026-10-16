@@ -1,0 +1,8 @@
+{
+  "description": "Seeds determinísticos usados para gerar candles sintéticos isolados; nunca são dados de mercado.",
+  "strategies": {
+    "ema_pullback": {"valid_seed": 21885, "near_valid_condition": "confirmation_direction", "absent": "flat_market"},
+    "bb_reversion": {"valid_seed": 1085, "near_valid_condition": "return_direction", "absent": "flat_market"},
+    "range_pivot": {"valid_seed": 1085, "near_valid_condition": "confirmation_direction", "absent": "flat_market"}
+  }
+}

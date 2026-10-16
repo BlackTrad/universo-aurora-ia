@@ -1,0 +1,89 @@
+name: Testes, frontend e Docker
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python scripts/release_preflight.py --source .
+      - run: python -m pytest -q
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend-src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend-src/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run build
+      - run: python ../scripts/verify_frontend_build.py --source . --bundle ../frontend
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Build completo do contêiner
+        run: docker build -t aurora-ci:${{ github.sha }} .
+      - name: Inicialização segura e healthcheck
+        run: |
+          docker run -d --name aurora-ci -e AURORA_PUBLIC_MODE=false -e PORT=8000 aurora-ci:${{ github.sha }}
+          for attempt in $(seq 1 35); do
+            if docker exec aurora-ci python -c "import urllib.request; assert urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=3).status == 200"; then
+              break
+            fi
+            if [ "$attempt" = 35 ]; then docker logs aurora-ci; exit 1; fi
+            sleep 2
+          done
+          docker exec aurora-ci python -c "from pathlib import Path; p=Path('/app/frontend/index.html'); assert p.is_file(); assert '/static/assets/' in p.read_text(); assert Path('/app/frontend/aurora-source.sha256').is_file()"
+          docker cp aurora-ci:/app/frontend "$RUNNER_TEMP/frontend"
+          python scripts/verify_frontend_build.py --source frontend-src --bundle "$RUNNER_TEMP/frontend"
+      - name: Testar login e bloqueios HTTP no modo público (sem credenciais reais)
+        run: |
+          HASH=$(docker run --rm aurora-ci:${{ github.sha }} python -c "from app.public_auth import make_password_hash; print(make_password_hash('disposable-ci-only-password-2026'))")
+          SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
+          docker run -d --name aurora-public-ci \
+            -e AURORA_PUBLIC_MODE=true \
+            -e AURORA_PUBLIC_ORIGIN=https://aurora-ci.example.invalid \
+            -e AURORA_ADMIN_PASSWORD_HASH="$HASH" \
+            -e AURORA_SESSION_SECRET="$SECRET" \
+            -e PORT=8000 aurora-ci:${{ github.sha }}
+          for attempt in $(seq 1 35); do
+            if docker exec aurora-public-ci python -c "import urllib.request; assert urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=3).status == 200"; then
+              break
+            fi
+            if [ "$attempt" = 35 ]; then docker logs aurora-public-ci; exit 1; fi
+            sleep 2
+          done
+          docker cp scripts/smoke_public.py aurora-public-ci:/tmp/aurora-public-smoke.py
+          docker exec aurora-public-ci python /tmp/aurora-public-smoke.py \
+            --url http://127.0.0.1:8000 \
+            --allow-local-http --host aurora-ci.example.invalid
+      - name: Logs em caso de falha
+        if: failure()
+        run: |
+          docker logs aurora-ci || true
+          docker logs aurora-public-ci || true
+      - name: Remover contêiner
+        if: always()
+        run: |
+          docker rm -f aurora-ci || true
+          docker rm -f aurora-public-ci || true

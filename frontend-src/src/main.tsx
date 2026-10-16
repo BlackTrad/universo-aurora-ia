@@ -1,0 +1,16 @@
+import {createRoot} from 'react-dom/client';
+import Dashboard from './routes/index';
+import History from './routes/historico';
+import Connections from './routes/conexoes';
+import Validation from './routes/validacao';
+import News from './routes/noticias';
+import Settings from './routes/configuracoes';
+import Learning from './routes/aprendizado';
+import UniverseAI from './routes/universo-ia';
+import Signals from './routes/sinais';
+import DailyCalendar from './routes/calendario';
+import TelegramPage from './routes/telegram';
+import {DataProvider} from './lib/api';
+import './styles.css';
+const path=location.pathname;
+createRoot(document.getElementById('root')!).render(<DataProvider>{path==='/sinais'?<Signals/>:path==='/calendario'?<DailyCalendar/>:path==='/telegram'?<TelegramPage/>:path==='/historico'?<History/>:path==='/conexoes'?<Connections/>:path==='/noticias'?<News/>:path==='/validacao'?<Validation/>:path==='/configuracoes'?<Settings/>:path==='/aprendizado'?<Learning/>:path==='/universo-ia'?<UniverseAI/>:<Dashboard/>}</DataProvider>);

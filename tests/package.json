@@ -1,0 +1,14 @@
+{
+  "name": "aurora-browser-tests",
+  "version": "1.26.18",
+  "private": true,
+  "scripts": {
+    "browser": "node browser-imported.cjs && node browser-results.cjs && node browser-fixes.cjs && node browser-audit.cjs && node browser-validation.cjs && node browser-header-history.cjs && node browser-startup-layout.cjs && node browser-review.cjs && node browser-telegram.cjs && node browser-content.cjs && node browser-chart.cjs && node browser-engine.cjs && node browser-evolution.cjs && node browser-setups.cjs && node browser-accuracy.cjs && node browser-corrections.cjs && node browser-audit-1264.cjs && node browser-preview-1265.cjs && node browser-audit-1266.cjs && node browser-price-action.cjs && node browser-compact-1269.cjs && node browser-12610.cjs && node browser-manual-12611.cjs && node browser-book-12612.cjs && node browser-stream-12613.cjs",
+    "canvas": "node cosmos-node.cjs",
+    "frontend": "node frontend-review-node.cjs",
+    "universe": "node universe-node.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

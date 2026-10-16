@@ -1,0 +1,37 @@
+.universe-page {display:flex;min-width:0;flex-direction:column;gap:16px;padding:8px 0 24px;}
+.universe-heading {display:flex;align-items:flex-end;justify-content:space-between;gap:16px;border-bottom:1px solid var(--border);padding:8px 2px 16px;}
+.universe-heading h1 {margin:5px 0;font-family:var(--font-mono);font-size:28px;font-weight:700;}
+.universe-heading p {margin:0;color:var(--muted-foreground);font-size:13px;}
+.universe-kicker {font-family:var(--font-mono);font-size:10px!important;letter-spacing:.12em;color:var(--primary)!important;}
+.universe-connection {flex:none;border:1px solid var(--border);border-radius:6px;padding:6px 9px;color:var(--warn);font:10px var(--font-mono);}
+.universe-connection.is-connected {color:var(--bull);}
+.universe-core {display:flex;align-items:center;justify-content:space-between;gap:20px;border:1px solid var(--border);border-left:3px solid var(--primary);border-radius:6px;background:var(--card);padding:16px 18px;}
+.universe-core h2 {margin:4px 0;font:600 20px var(--font-mono);}
+.universe-detail {margin:0;color:var(--muted-foreground);font-size:13px;}
+.universe-decision {display:flex;min-width:180px;flex-direction:column;align-items:flex-end;gap:4px;text-align:right;}
+.universe-decision span {font:700 22px var(--font-mono);color:var(--primary);}
+.universe-decision small {color:var(--muted-foreground);font-size:11px;}
+.planet-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+.planet-card {min-width:0;border:1px solid var(--border);border-radius:6px;background:color-mix(in oklch,var(--card),transparent 4%);padding:14px;}
+.planet-card-top {display:flex;min-width:0;align-items:center;gap:11px;}
+.planet-sphere {position:relative;display:block;width:42px;height:42px;flex:none;border:1px solid color-mix(in oklch,var(--planet-color),white 35%);border-radius:50%;background:radial-gradient(circle at 32% 27%,color-mix(in oklch,var(--planet-color),white 70%),var(--planet-color) 48%,color-mix(in oklch,var(--planet-color),black 55%) 100%);box-shadow:inset -5px -6px 10px #0007,0 0 14px color-mix(in oklch,var(--planet-color),transparent 70%);}
+.planet-sphere[data-planet="groq"] {--planet-color:#ef8064;}
+.planet-sphere[data-planet="nvidia"] {--planet-color:#89c85a;}
+.planet-sphere[data-planet="nemotron"] {--planet-color:#5ebed0;}
+.planet-sphere[data-planet="glm"] {--planet-color:#e7b74c;}
+.planet-sphere[data-planet="gemini"] {--planet-color:#b693e7;}
+.planet-sphere[data-planet="kimi"] {--planet-color:#ed8eae;}
+.planet-card[data-status="analisando"] .planet-sphere {animation:planet-signal 1.2s ease-in-out infinite alternate;}
+@keyframes planet-signal {to {transform:scale(1.08);box-shadow:inset -5px -6px 10px #0007,0 0 22px color-mix(in oklch,var(--planet-color),transparent 35%);}}
+.planet-name {min-width:0;flex:1;}
+.planet-name h2 {overflow:hidden;margin:0;text-overflow:ellipsis;font-size:15px;font-weight:650;}
+.planet-name p {margin:3px 0 0;color:var(--muted-foreground);font-size:11px;}
+.planet-status {flex:none;border:1px solid var(--border);border-radius:4px;padding:4px 6px;color:var(--muted-foreground);font:9px var(--font-mono);}
+.planet-status[data-status="disponivel"] {color:var(--bull);border-color:color-mix(in oklch,var(--bull),transparent 65%);}
+.planet-status[data-status="analisando"] {color:var(--primary);border-color:color-mix(in oklch,var(--primary),transparent 55%);}
+.planet-status[data-status="timeout"],.planet-status[data-status="erro"],.planet-status[data-status="rate_limit"] {color:var(--warn);}
+.planet-model {overflow:hidden;margin:12px 0 6px;color:var(--primary);font:10px var(--font-mono);text-overflow:ellipsis;white-space:nowrap;}
+.planet-detail {min-height:38px;margin:0;color:var(--muted-foreground);font-size:12px;line-height:1.5;overflow-wrap:anywhere;}
+.planet-confidence,.planet-latency {margin:8px 0 0;color:var(--muted-foreground);font-size:10px;}
+@media (max-width:780px) {.planet-grid {grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media (max-width:520px) {.universe-heading {align-items:flex-start;flex-direction:column;}.universe-core {align-items:flex-start;flex-direction:column;}.universe-decision {align-items:flex-start;text-align:left;}.planet-grid {grid-template-columns:minmax(0,1fr);}}

@@ -1,0 +1,80 @@
+/* Tema único do AURORA: variáveis semânticas em um só lugar. */
+@custom-variant dark (&:is(.dark *));
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--foreground);
+  --color-destructive: var(--bear);
+  --color-destructive-foreground: var(--foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--primary);
+  --color-ring-offset-background: var(--background);
+  --color-chart-1: var(--primary);
+  --color-chart-2: var(--bull);
+  --color-chart-3: var(--warn);
+  --color-chart-4: var(--violet);
+  --color-chart-5: var(--bear);
+  --color-bull: var(--bull);
+  --color-bear: var(--bear);
+  --color-warn: var(--warn);
+  --font-sans: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+}
+:root, .dark {
+  color-scheme: dark;
+  --radius: .75rem;
+  --background: oklch(.13 .024 258);
+  --foreground: oklch(.94 .009 240);
+  --card: oklch(.185 .025 258);
+  --popover: oklch(.19 .025 258);
+  --primary: oklch(.82 .12 210);
+  --primary-foreground: oklch(.16 .025 255);
+  --secondary: oklch(.25 .025 255);
+  --muted: oklch(.23 .021 255);
+  --muted-foreground: oklch(.73 .028 244);
+  --accent: oklch(.28 .034 247);
+  --border: oklch(.49 .04 242 / 30%);
+  --input: oklch(.5 .045 245 / 45%);
+  --bull: oklch(.79 .16 154);
+  --bear: oklch(.73 .18 26);
+  --warn: oklch(.84 .12 80);
+  --violet: oklch(.71 .13 295);
+}
+@layer base {
+  * {border-color: var(--border);}
+  html {min-width: 280px;scroll-padding-top: 20px;}
+  body {margin: 0;background: var(--background);color: var(--foreground);font-family: var(--font-sans);-webkit-font-smoothing: antialiased;}
+  ::selection {background: oklch(.82 .12 210 / 28%);color: var(--foreground);}
+}
+input[type="checkbox"] {accent-color: var(--primary);width: 14px;height: 14px;flex-shrink: 0;}
+button:not(:disabled), summary, a, select {-webkit-tap-highlight-color: oklch(.82 .12 210 / 15%);}
+button:not(:disabled) {cursor: pointer;}
+button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {outline: 2px solid var(--primary);outline-offset: 3px;}
+button:disabled {cursor: default;}
+.app-main button, .app-main select, .app-main input:not([type="checkbox"]) {min-height: 36px;}
+.app-main :is(input, select, textarea) {max-width: 100%;}
+.app-main > h1 {letter-spacing: -.025em;}
+.skip-link {position: fixed;left: 16px;top: 12px;z-index: 100;padding: 12px 16px;border-radius: 8px;background: var(--primary);color: var(--primary-foreground);font-weight: 600;transform: translateY(-160%);}
+.skip-link:focus {transform: translateY(0);}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {animation-duration: .01ms !important;animation-iteration-count: 1 !important;transition-duration: .01ms !important;scroll-behavior: auto !important;}
+}
